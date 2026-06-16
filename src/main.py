@@ -47,9 +47,6 @@ ap = network.WLAN(network.AP_IF)
 ap.active(True)
 ap.config(essid="ESP32-Semaphores", password="12345678")
 
-print("Connect to WiFi: ESP32-Semaphores")
-print("IP:", ap.ifconfig()[0])
-
 # =========================
 # HTML UI (T1 → T4)
 # =========================
@@ -194,8 +191,6 @@ addr = socket.getaddrinfo("0.0.0.0", 80)[0][-1]
 server = socket.socket()
 server.bind(addr)
 server.listen(5)
-
-print("Server running...")
 
 # =========================
 # MAIN LOOP
