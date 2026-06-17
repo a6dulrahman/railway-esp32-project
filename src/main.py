@@ -1,9 +1,30 @@
 import network
 import socket
+import espnow
 from machine import Pin
 
+# =====================
+# ESP-NOW
+# =====================
+
+sta = network.WLAN(network.STA_IF)
+sta.active(True)
+
+e = espnow.ESPNow()
+e.active(True)
+
+# Replace with TRAIN ESP MAC
+TRAIN_MAC = b'\x38\x18\x2b\x8b\xd7\x9c'
+
+e.add_peer(TRAIN_MAC)
+
+
+def send_train_command(command):
+    e.send(TRAIN_MAC, command)
+
+
 # =========================
-# LED SETUP (T1 → T4)
+# LED SETUP (T1 → T6)
 # =========================
 
 semaphores = {
@@ -27,6 +48,16 @@ semaphores = {
         "yellow": Pin(23, Pin.OUT),
         "green": Pin(25, Pin.OUT),
     },
+    "T5": {
+        "red": Pin(26, Pin.OUT),
+        "yellow": Pin(27, Pin.OUT),
+        "green": Pin(14, Pin.OUT),
+    },
+    "T6": {
+        "red": Pin(32, Pin.OUT),
+        "yellow": Pin(33, Pin.OUT),
+        "green": Pin(13, Pin.OUT),
+    },
 }
 
 
@@ -45,13 +76,17 @@ def turn_on(sem, color):
 # =========================
 ap = network.WLAN(network.AP_IF)
 ap.active(True)
-ap.config(essid="ESP32-Semaphores", password="12345678")
+ap.config(
+    essid="ESP32",
+    password="12345678",
+    channel=6,
+    authmode=network.AUTH_WPA_WPA2_PSK
+)
 
-print("Connect to WiFi: ESP32-Semaphores")
 print("IP:", ap.ifconfig()[0])
 
 # =========================
-# HTML UI (T1 → T4)
+# HTML UI (T1 → T6)
 # =========================
 html = """<!doctype html>
 <html>
@@ -71,8 +106,9 @@ html = """<!doctype html>
 
     .container {
       display: flex;
-      gap: 40px;
+      gap: 30px;
       flex-wrap: wrap;
+      justify-content: center;
     }
 
     .semaphore {
@@ -92,13 +128,13 @@ html = """<!doctype html>
     }
 
     .light {
-      width: 70px;
-      height: 70px;
+      width: 60px;
+      height: 60px;
       border-radius: 50%;
       margin: 10px auto;
       cursor: pointer;
       opacity: 0.4;
-      transition: all 0.3s ease;
+      transition: 0.3s;
     }
 
     .red { background: red; }
@@ -130,35 +166,20 @@ html = """<!doctype html>
 <body>
 
 <div class="container">
+"""
 
+# Generate UI dynamically for T1 → T6
+for i in range(1, 7):
+    html += f"""
   <div class="semaphore">
-    <div class="title">T1</div>
-    <div id="T1_red" class="light red" onclick="setLight('T1','red')"></div>
-    <div id="T1_yellow" class="light yellow" onclick="setLight('T1','yellow')"></div>
-    <div id="T1_green" class="light green" onclick="setLight('T1','green')"></div>
+    <div class="title">T{i}</div>
+    <div id="T{i}_red" class="light red" onclick="setLight('T{i}','red')"></div>
+    <div id="T{i}_yellow" class="light yellow" onclick="setLight('T{i}','yellow')"></div>
+    <div id="T{i}_green" class="light green" onclick="setLight('T{i}','green')"></div>
   </div>
+"""
 
-  <div class="semaphore">
-    <div class="title">T2</div>
-    <div id="T2_red" class="light red" onclick="setLight('T2','red')"></div>
-    <div id="T2_yellow" class="light yellow" onclick="setLight('T2','yellow')"></div>
-    <div id="T2_green" class="light green" onclick="setLight('T2','green')"></div>
-  </div>
-
-  <div class="semaphore">
-    <div class="title">T3</div>
-    <div id="T3_red" class="light red" onclick="setLight('T3','red')"></div>
-    <div id="T3_yellow" class="light yellow" onclick="setLight('T3','yellow')"></div>
-    <div id="T3_green" class="light green" onclick="setLight('T3','green')"></div>
-  </div>
-
-  <div class="semaphore">
-    <div class="title">T4</div>
-    <div id="T4_red" class="light red" onclick="setLight('T4','red')"></div>
-    <div id="T4_yellow" class="light yellow" onclick="setLight('T4','yellow')"></div>
-    <div id="T4_green" class="light green" onclick="setLight('T4','green')"></div>
-  </div>
-
+html += """
 </div>
 
 <script>
@@ -205,17 +226,33 @@ while True:
     request = client.recv(1024).decode()
 
     try:
-        path = request.split(" ")[1]  # /T1/red
+        path = request.split(" ")[1]
         parts = path.strip("/").split("/")
 
         if len(parts) == 2:
             sem, action = parts
 
             if sem in semaphores:
+
                 if action == "off":
                     turn_off(sem)
-                elif action in ["red", "yellow", "green"]:
-                    turn_on(sem, action)
+
+                    # Optional:
+                    # If user turns semaphore OFF,
+                    # train also stops
+                    send_train_command("STOP")
+
+                elif action == "red":
+                    turn_on(sem, "red")
+                    send_train_command("STOP")
+
+                elif action == "yellow":
+                    turn_on(sem, "yellow")
+                    send_train_command("MEDIUM")
+
+                elif action == "green":
+                    turn_on(sem, "green")
+                    send_train_command("FAST")
     except:
         pass
 
